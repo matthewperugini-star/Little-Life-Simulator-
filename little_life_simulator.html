@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Little Life Simulator</title>
+<style>
+  *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#dff3d8;color:#243424}
+  header{padding:14px 18px;background:#6fa85b;color:white;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  h1{font-size:22px;margin:0}.stats{display:flex;gap:12px;flex-wrap:wrap;font-weight:700}
+  button{border:0;border-radius:10px;padding:10px 14px;background:#fff;color:#315b2b;font-weight:700;cursor:pointer}
+  main{max-width:1050px;margin:auto;padding:14px}.tabs{display:flex;gap:8px;margin-bottom:12px}.tabs button.active{background:#315b2b;color:white}
+  #world{position:relative;height:560px;border:4px solid #4f7f45;border-radius:16px;overflow:hidden;background:#a9d98f}
+  .tree{position:absolute;font-size:32px}.food{position:absolute;font-size:24px;filter:drop-shadow(0 2px 1px #557);transition:all .2s}
+  .person{position:absolute;width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#fff;border:3px solid #5d8050;font-size:25px;transition:left .35s linear,top .35s linear;z-index:3}
+  .name{position:absolute;top:39px;font-size:10px;font-weight:800;white-space:nowrap;left:50%;transform:translateX(-50%);background:#fff8;padding:2px 4px;border-radius:4px}
+  #treeView{background:#fff;border:3px solid #6f965f;border-radius:16px;min-height:560px;padding:18px;overflow:auto}
+  .family{display:flex;gap:22px;align-items:flex-start;min-width:max-content}.branch{display:flex;flex-direction:column;align-items:center}
+  .card{background:#eef8e9;border:2px solid #6f965f;border-radius:12px;padding:8px 12px;text-align:center;min-width:120px}
+  .kids{display:flex;gap:14px;margin-top:24px;position:relative}.kids:before{content:"";position:absolute;top:-13px;left:10%;right:10%;border-top:2px solid #6f965f}
+  .meta{font-size:11px;color:#557}.empty{text-align:center;padding:80px;color:#687}
+  footer{font-size:12px;text-align:center;padding:10px;color:#567}
+</style>
+</head>
+<body>
+<header><h1>🌱 Little Life Simulator</h1><div class="stats">
+<span>👥 <b id="pop">2</b></span><span>🍎 <b id="food">10</b></span><span>🧬 Gen <b id="gen">1</b></span>
+<button id="pause">⏸ Pause</button><button id="reset">↻ Reset</button>
+</div></header>
+<main>
+<div class="tabs"><button id="worldTab" class="active">🌎 World</button><button id="treeTab">🌳 Family Tree</button></div>
+<section id="world"></section>
+<section id="treeView" hidden></section>
+<footer>People gather nearby food automatically. When the community has enough stored food, a new person is welcomed into the family.</footer>
+</main>
+<script>
+const world=document.getElementById('world'), treeView=document.getElementById('treeView');
+let people=[], foods=[], nextId=1, totalFood=10, paused=false, last=0, foodTimer=0, reproTimer=0;
+
+const names=["Alex","Sam","Jamie","Taylor","Morgan","Riley","Jordan","Casey","Avery","Quinn","Parker","Drew","Rowan","Cameron","Skyler","Reese","Finley","Charlie","Emery","Harper","Logan","Sage","Blake","Robin"];
+const rand=(a,b)=>Math.random()*(b-a)+a, pick=a=>a[Math.floor(Math.random()*a.length)];
+
+function makePerson(parents=[],gen=1){
+  const p={id:nextId++,name:pick(names)+" "+String(nextId).padStart(2,"0"),x:rand(5,90),y:rand(8,82),
+           parents:parents.map(x=>x.id),children:[],gen,age:0,el:null};
+  people.push(p); parents.forEach(x=>x.children.push(p.id)); return p;
+}
+function spawnFood(){
+  foods.push({id:crypto.randomUUID(),x:rand(4,94),y:rand(5,90),el:null});
+}
+function renderWorld(){
+  world.innerHTML="";
+  for(let i=0;i<12;i++){let t=document.createElement("div");t.className="tree";t.textContent="🌳";t.style.left=rand(0,94)+"%";t.style.top=rand(0,88)+"%";world.appendChild(t)}
+  foods.forEach(f=>{let e=document.createElement("div");e.className="food";e.textContent="🍎";e.style.left=f.x+"%";e.style.top=f.y+"%";f.el=e;world.appendChild(e)});
+  people.forEach(p=>{let e=document.createElement("div");e.className="person";e.textContent=p.gen%2?"🧑":"👩";e.style.left=p.x+"%";e.style.top=p.y+"%";e.innerHTML+=(p.el?"" : `<span class="name">${p.name}</span>`);p.el=e;world.appendChild(e)});
+}
+function moveAndEat(){
+  people.forEach(p=>{
+    if(foods.length){
+      let target=foods.reduce((best,f)=>Math.hypot(f.x-p.x,f.y-p.y)<Math.hypot(best.x-p.x,best.y-p.y)?f:best,foods[0]);
+      p.x+=(target.x-p.x)*.10;p.y+=(target.y-p.y)*.10;
+      if(Math.hypot(target.x-p.x,target.y-p.y)<2.4){foods=foods.filter(f=>f!==target);totalFood++}
+    }else{p.x=Math.max(2,Math.min(92,p.x+rand(-2,2)));p.y=Math.max(4,Math.min(88,p.y+rand(-2,2)))}
+    if(p.el){p.el.style.left=p.x+"%";p.el.style.top=p.y+"%"}
+  });
+}
+function reproduce(){
+  if(people.length>=30 || totalFood<12 || people.length<2)return;
+  // Choose two existing people as abstract co-parents.
+  let a=pick(people), b=pick(people.filter(p=>p!==a));
+  totalFood-=8;
+  let child=makePerson([a,b],Math.max(a.gen,b.gen)+1);
+  child.x=(a.x+b.x)/2; child.y=(a.y+b.y)/2;
+  renderWorld();
+}
+function updateStats(){
+  document.getElementById("pop").textContent=people.length;
+  document.getElementById("food").textContent=totalFood+foods.length;
+  document.getElementById("gen").textContent=Math.max(...people.map(p=>p.gen));
+}
+function card(p){
+ return `<div class="card"><b>🧑 ${p.name}</b><div class="meta">Generation ${p.gen}<br>Parents: ${p.parents.length? p.parents.map(id=>people.find(x=>x.id===id)?.name).join(" & "):"Starting pair"}</div></div>`;
+}
+function branch(p,seen=new Set()){
+ if(seen.has(p.id))return ""; seen.add(p.id);
+ let kids=p.children.map(id=>people.find(x=>x.id===id)).filter(Boolean);
+ return `<div class="branch">${card(p)}${kids.length?`<div class="kids">${kids.map(k=>branch(k,seen)).join("")}</div>`:""}</div>`;
+}
+function renderTree(){
+ let roots=people.filter(p=>p.parents.length===0);
+ treeView.innerHTML=`<h2>🌳 Family Tree</h2><p>Each connection shows parent → child. The tree grows automatically as new generations appear.</p>
+ <div class="family">${roots.map(r=>branch(r,new Set())).join("")}</div>`;
+}
+function loop(ts){
+ if(!last)last=ts; let dt=ts-last;last=ts;
+ if(!paused){
+   foodTimer+=dt; reproTimer+=dt;
+   if(foodTimer>1800){spawnFood();spawnFood();foodTimer=0}
+   if(reproTimer>3000){reproduce();reproTimer=0}
+   moveAndEat();
+   // food is consumed slowly
+   if(dt>0 && Math.random()<dt/5000) totalFood=Math.max(0,totalFood-1);
+   updateStats();
+ }
+ requestAnimationFrame(loop);
+}
+document.getElementById("pause").onclick=()=>{paused=!paused;document.getElementById("pause").textContent=paused?"▶ Resume":"⏸ Pause"};
+document.getElementById("reset").onclick=()=>location.reload();
+document.getElementById("worldTab").onclick=()=>{world.hidden=false;treeView.hidden=true;worldTab.classList.add("active");treeTab.classList.remove("active")};
+document.getElementById("treeTab").onclick=()=>{world.hidden=true;treeView.hidden=false;treeTab.classList.add("active");worldTab.classList.remove("active");renderTree()};
+people.push(makePerson([],1),makePerson([],1)); for(let i=0;i<8;i++)spawnFood(); renderWorld(); updateStats();
+setInterval(()=>{if(!paused)renderTree()},3000);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
